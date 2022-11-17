@@ -5,10 +5,40 @@ import pickle
 from collections import Counter
 
 
-def words2ids(words, word2id):
+def word2ids(words, word2id):
     ret = []
     for word in words:
         ret.append(word2id.get(word, 1))
+    return ret
+
+
+def doc2ids(words, word2id):
+    ret = []
+    oovs = []
+    for word in words:
+        #ret.append(word2id.get(word, 1))               Original, without pointer generator
+        i = word2id.get(word, 1)
+        if i == 1:
+            if word not in oovs:
+                oovs.append(word)
+            oov_num = oovs.index(word)
+            ret.append(len(word2id)+oov_num)
+        else:
+            ret.append(i)
+    return ret, oovs
+
+
+def sum2ids(words, word2id, doc_oovs):
+    ret = []
+    for word in words:
+        i = word2id.get(word, 1)
+        if i == 1:
+            if word in doc_oovs:
+                ret.append(len(word2id)+doc_oovs.index(word))
+            else:
+                ret.append(1)
+        else:
+            ret.append(i)
     return ret
 
 

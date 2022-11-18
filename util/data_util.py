@@ -12,6 +12,7 @@ def word2ids(words, word2id):
     return ret
 
 
+
 def doc2ids(words, word2id):
     ret = []
     oovs = []

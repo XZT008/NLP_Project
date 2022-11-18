@@ -27,6 +27,7 @@ def argsort(keys, *lists, descending=False):
 
 class summ_dataset(Dataset):
     def __init__(self, doc, sum, word2id, MAX_ENC_LEN=100, MAX_DEC_LEN=20):
+
         self.doc = doc
         self.sum = sum
         self.word2id = word2id
@@ -37,6 +38,12 @@ class summ_dataset(Dataset):
         return len(self.doc)
 
     def __getitem__(self, idx):
+        if len(self.doc[idx]) == 0 or len(self.sum[idx]) == 0:
+            del self.doc[idx]
+            del self.sum[idx]
+            return None
+
+
         doc_text_l = self.doc[idx]
         if len(doc_text_l) > self.max_enc_len:
             doc_text_l = doc_text_l[:self.max_enc_len]
@@ -56,6 +63,9 @@ class summ_dataset(Dataset):
 
 
 def collate_func(batch, MAX_DOC_LEN=100, MAX_SUM_LEN=30):
+
+
+
     doc_input = []
     doc_extend_vocab = []
     sum_input = []
@@ -64,6 +74,7 @@ def collate_func(batch, MAX_DOC_LEN=100, MAX_SUM_LEN=30):
     p_gen_pad = []
     doc_len = []
     sum_len = []
+    oovs = []
 
     for datum in batch:
         doc_len.append(datum[2])
@@ -105,22 +116,23 @@ def collate_func(batch, MAX_DOC_LEN=100, MAX_SUM_LEN=30):
         sum_target.append(padded_vec_s3)
         input_masks.append(mask)
         p_gen_pad.append(datum[7])
+        oovs.append(datum[6])
 
     p_gen_pad_size = max(p_gen_pad)
 
-
-    doc_input, doc_extend_vocab, doc_extend_vocab, sum_input, input_masks,  doc_len, sum_len= argsort(doc_len, doc_input, doc_extend_vocab, sum_input,
-                                                             sum_target, input_masks, doc_len, sum_len, descending=True)
+    doc_input, doc_extend_vocab, sum_input, sum_target, input_masks,  doc_len, sum_len, oovs = argsort(doc_len, doc_input, doc_extend_vocab, sum_input,
+                                                             sum_target, input_masks, doc_len, sum_len, oovs, descending=True)
 
     named_returntuple = namedtuple('namedtuple', ['doc_input', 'doc_extend_vocab', 'sum_input', 'sum_target', 'input_masks',
-                                                  'doc_len', 'sum_len', 'vocab_pad'])
-    return_tuple = named_returntuple(torch.from_numpy(np.array(doc_input)).cuda(),
-                                     torch.from_numpy(np.array(doc_extend_vocab)).cuda(),
-                                     torch.from_numpy(np.array(sum_input)).cuda(),
-                                     torch.from_numpy(np.array(sum_target)).cuda(),
+                                                  'doc_len', 'sum_len', 'vocab_pad', 'oovs'])
+    return_tuple = named_returntuple(torch.from_numpy(np.array(doc_input)).long().cuda(),
+                                     torch.from_numpy(np.array(doc_extend_vocab)).long().cuda(),
+                                     torch.from_numpy(np.array(sum_input)).long().cuda(),
+                                     torch.from_numpy(np.array(sum_target)).long().cuda(),
                                      torch.from_numpy(np.array(input_masks)).cuda(),
                                      torch.from_numpy(np.array(doc_len)),
                                      torch.from_numpy(np.array(sum_len)),
-                                     torch.zeros(len(doc_len), p_gen_pad_size).cuda())
+                                     torch.zeros(len(doc_len), p_gen_pad_size).cuda(),
+                                     oovs)
 
     return return_tuple

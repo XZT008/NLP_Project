@@ -7,6 +7,9 @@ import pickle
 from util.summ_dataset import summ_dataset
 from functools import partial
 from util.summ_dataset import collate_func
+from train import train_loop
+from model import Model
+from tqdm import tqdm
 """
 This section is to tokenize data
 
@@ -49,7 +52,31 @@ with open('saved/train_summary.pkl', 'rb') as f:
 with open('saved/word2id.pkl', 'rb') as f:
     word2id = pickle.load(f)
 
-train_dataset = summ_dataset(train_doc, train_sum, word2id)
-train_loader = DataLoader(train_dataset, batch_size=4, collate_fn=partial(collate_func, MAX_DOC_LEN=200, MAX_SUM_LEN=31))
-for t in train_loader:
-    break                   #for debug
+with open('saved/id2word.pkl', 'rb') as f:
+    id2word = pickle.load(f)
+
+def cleaning(docs, sums):
+    idx_list = []
+    for i,(d, s) in tqdm(enumerate(zip(docs, sums))):
+        if len(d) == 0 or len(s) == 0:
+            idx_list.append(i)
+    for i in sorted(idx_list, reverse=True):
+        del docs[i]
+        del sums[i]
+    return docs, sums
+
+
+train_doc, train_sum = cleaning(train_doc, train_sum)
+
+
+train_dataset = summ_dataset(train_doc, train_sum, word2id, MAX_ENC_LEN=200, MAX_DEC_LEN=30)
+
+
+train_loader = DataLoader(train_dataset, batch_size=200, collate_fn=partial(collate_func, MAX_DOC_LEN=200, MAX_SUM_LEN=31)
+                          , shuffle=True)
+
+#model = Model()
+model = torch.load('saved/saved_model/rl_1.pt')
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+train_loop(20, train_loader, model, optimizer, id2word)
+

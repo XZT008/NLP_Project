@@ -8,7 +8,7 @@ from util import config
 from beam_search import beam_search
 from rouge import Rouge
 
-model = torch.load('saved/saved_model/1.pt')
+model = torch.load('saved/saved_model/rl_1.pt')
 with open('saved/test_document.pkl', 'rb') as f:
     test_doc = pickle.load(f)
 
@@ -53,18 +53,18 @@ def test(model, id2word, dataloader):
 
             for doc_input, pred, target, oov in zip(doc_input, pred_ids, sum_target, oovs):
                 tmp_vocab = id2word+oov
-                inputs.append(' '.join([tmp_vocab[i] for i in doc_input]))
+                inputs.append(' '.join([tmp_vocab[i] for i in doc_input if i != 0 and i != 3]))
                 preds.append(' '.join([tmp_vocab[i] for i in pred]))
-                targets.append(' '.join([tmp_vocab[i] for i in target]))
-                break
+                targets.append(' '.join([tmp_vocab[i] for i in target if i != 0 and i != 3]))
 
-        scores = rouge.get_scores(preds, targets, avg=True)
-        print("Scores: ", scores)
+
+            scores = rouge.get_scores(preds, targets, avg=True)
+            print("Scores: ", scores)
 
 
 
 test_doc, test_sum = cleaning(test_doc, test_sum)
 test_dataset = summ_dataset(test_doc, test_sum, word2id, MAX_ENC_LEN=200, MAX_DEC_LEN=30)
-test_loader = DataLoader(test_dataset, batch_size=100, collate_fn=partial(collate_func, MAX_DOC_LEN=200, MAX_SUM_LEN=31)
+test_loader = DataLoader(test_dataset, batch_size=200, collate_fn=partial(collate_func, MAX_DOC_LEN=200, MAX_SUM_LEN=31)
                           , shuffle=True)
 test(model, id2word, test_loader)

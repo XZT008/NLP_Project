@@ -7,7 +7,7 @@ from rouge import Rouge
 from numpy import random
 from util import config
 from tqdm import tqdm
-
+import pickle
 
 # completely teacher forcing
 def loss_mle(model, enc_out, enc_hidden, batch, batch_size):
@@ -246,7 +246,10 @@ def get_greedy_sample(model, enc_out, enc_hidden, batch, batch_size, id2words):
 def train_loop(epochs, train_loader, model, optimizer, id2words):
     model.train()
     for epoch in range(epochs):
-        losses = []
+        mle_losses = []
+        simple_rl_losses = []
+        rl_losses = []
+
         rewards = []
         for i, batch in tqdm(enumerate(train_loader)):
             doc_input, doc_extend_vocab, sum_input, sum_target, input_masks, doc_len, sum_len, vocab_pad = \
@@ -255,18 +258,75 @@ def train_loop(epochs, train_loader, model, optimizer, id2words):
             batch_size = doc_len.size(0)
             enc_batch = model.embeds(doc_input)
             enc_out, enc_hidden = model.encoder(enc_batch, doc_len)
-            # mle_loss = loss_mle(model, enc_out, enc_hidden, batch, batch_size)
-            #greedy_samples = get_greedy_sample(model, enc_out, enc_hidden, batch, batch_size, id2words)
-            #get_sample(model, enc_out, enc_hidden, batch, batch_size)
-            loss, reward = loss_rl(model, enc_out, enc_hidden, batch, batch_size, id2words, use_simple=False)
-            losses.append(loss.item())
+            mle_loss = loss_mle(model, enc_out, enc_hidden, batch, batch_size)
+            simple_rl_loss, reward = loss_rl(model, enc_out, enc_hidden, batch, batch_size, id2words, use_simple=True)
+            simple_rl_losses.append(simple_rl_loss.item())
+            if i % 30 == 0:
+                rl_loss, reward = loss_rl(model, enc_out, enc_hidden, batch, batch_size, id2words, use_simple=False)
+                rl_losses.append(rl_loss.item())
+                loss = 0.25*mle_loss + 0.25*simple_rl_loss + 0.5*rl_loss
+            else:
+                loss = 0.25*mle_loss + 0.75*simple_rl_loss
+            mle_losses.append(mle_loss.item())
             rewards.append(reward.item())
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if i%30 == 0 and i!=0:
-                print(f'At itr:{i}, avg loss:{sum(losses[i-30:i]) / 30}, avg reward: {sum(rewards[i-30:i]) / 30}')
+            if i%30 == 0 and i!= 0:
+                print(f'At itr:{i}, avg mle loss:{sum(mle_losses[i-30:i]) / 30}, avg simple rl loss:{sum(simple_rl_losses[i-30:i]) / 30}, avg rl loss:{sum(rl_losses) / len(rl_losses)}, avg reward: {sum(rewards[i-30:i]) / 30}')
 
-        print(f'At epoch:{epoch}, avg loss:{sum(losses)/len(losses)}, avg reward: {sum(rewards)/len(rewards)}')
-        torch.save(model, f'saved/saved_model/rl_{epoch+2}.pt')
+            if i % 1000 == 0 and i!=0:
+                with open(f'mle_{epoch}.pkl', 'wb') as f:
+                    pickle.dump(mle_losses, f)
+                with open(f'sim_rl_{epoch}.pkl', 'wb') as f:
+                    pickle.dump(simple_rl_losses, f)
+                with open(f'rewards_{epoch}.pkl', 'wb') as f:
+                    pickle.dump(rewards, f)
+                with open(f'rl_{epoch}.pkl', 'wb') as f:
+                    pickle.dump(rl_losses, f)
+
+        print(f'At epoch:{epoch}, avg mle loss:{sum(mle_losses)/len(mle_losses)}, avg simple rl loss:{sum(simple_rl_losses)/len(simple_rl_losses)}, avg rl loss:{sum(rl_losses)/len(rl_losses)}, avg reward: {sum(rewards)/len(rewards)}')
+        #torch.save(model, f'saved/saved_model/{epoch}.pt')
+
+
+
+def train_loop_rl_only(epochs, train_loader, model, optimizer, id2words):
+    model.train()
+    for epoch in range(epochs):
+        simple_rl_losses = []
+        rl_losses = []
+        rewards = []
+
+        for i, batch in tqdm(enumerate(train_loader)):
+            doc_input, doc_extend_vocab, sum_input, sum_target, input_masks, doc_len, sum_len, vocab_pad = \
+                batch.doc_input, batch.doc_extend_vocab, batch.sum_input, batch.sum_target, \
+                batch.input_masks, batch.doc_len, batch.sum_len, batch.vocab_pad
+            batch_size = doc_len.size(0)
+            enc_batch = model.embeds(doc_input)
+            enc_out, enc_hidden = model.encoder(enc_batch, doc_len)
+            #mle_loss = loss_mle(model, enc_out, enc_hidden, batch, batch_size)
+            simple_rl_loss, reward = loss_rl(model, enc_out, enc_hidden, batch, batch_size, id2words, use_simple=True)
+            simple_rl_losses.append(simple_rl_loss.item())
+            if i % 30 == 0:
+                rl_loss, reward = loss_rl(model, enc_out, enc_hidden, batch, batch_size, id2words, use_simple=False)
+                rl_losses.append(rl_loss.item())
+                loss = 0.5*simple_rl_loss + 0.5*rl_loss
+            else:
+                loss = simple_rl_loss
+            rewards.append(reward.item())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if i%30 == 0 and i!= 0:
+                print(f'At itr:{i}, avg simple rl loss:{sum(simple_rl_losses[i-30:i]) / 30}, avg rl loss:{sum(rl_losses) / len(rl_losses)}, avg reward: {sum(rewards[i-30:i]) / 30}')
+
+        print(f'At epoch:{epoch}, avg simple rl loss:{sum(simple_rl_losses)/len(simple_rl_losses)}, avg rl loss:{sum(rl_losses)/len(rl_losses)}, avg reward: {sum(rewards)/len(rewards)}')
+        with open(f'sim_rl_{epoch}.pkl', 'wb') as f:
+            pickle.dump(simple_rl_losses, f)
+        with open(f'rewards_{epoch}.pkl', 'wb') as f:
+            pickle.dump(rewards, f)
+        with open(f'rl_{epoch}.pkl', 'wb') as f:
+            pickle.dump(rl_losses, f)
+        torch.save(model, f'saved/saved_model/rl_{epoch}.pt')
